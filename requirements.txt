@@ -1,0 +1,4 @@
+pyTelegramBotAPI
+piecash
+python-dotenv
+mysql-connector-python
