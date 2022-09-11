@@ -1,4 +1,3 @@
-from typing import List
 from functools import wraps
 import os
 
@@ -68,13 +67,7 @@ def add_children_markup(mk: InlineKeyboardMarkup, account: Account, callback_pre
     return mk
 
 
-@bot.message_handler(commands=["start"])
-@protected
-def command_start(message: Message):
-    bot.send_message(message.chat.id, f"Привет, @{message.from_user.username}", reply_markup=ReplyKeyboardRemove())
-
-
-@bot.message_handler(commands=["accounts"])
+@bot.message_handler(commands=["start", "accounts"])
 @open_book()
 @protected
 def command_accounts(message: Message, book):
@@ -119,25 +112,24 @@ def callback_journal(call: CallbackQuery, book: Book):
     page = int(page)
 
     acc: Account = book.accounts(guid=guid)
-    splits: List[Split] = sorted(acc.splits, key=lambda x: (x.transaction.post_date, x.transaction.enter_date), reverse=True)
-    start, stop = page * config.PER_PAGE, (page + 1) * config.PER_PAGE
-    journal: List[Split] = splits[start:stop]
+    journal = book.query(Split).join(Transaction)\
+        .filter(Split.account == acc)\
+        .order_by(Transaction.post_date.desc())
+    j_count = journal.count()
+    journal = journal.limit(config.PER_PAGE).offset(page * config.PER_PAGE)
 
-    len_splits = len(splits)
-    pages_count = len_splits // config.PER_PAGE + (1 if len_splits % config.PER_PAGE else 0)
-
-    text = f"<b>{acc.name}</b> {start + 1}...{stop}\n{acc.get_balance():,.2f}\n<pre>"
+    text = f"<b>{acc.name}</b>\n{acc.get_balance():,.2f}\n<pre>"
     for record in journal:
-        text += f"{record.transaction.post_date} | {record.transaction.description} | {record.value}\n"
+        text += f"{record.transaction.post_date} | {record.transaction.description} | {record.value * acc.sign}\n"
         for sp in record.transaction.splits:
             text += f"{sp.account.fullname} {sp.value}\n"
         text += "\n"
     text += "</pre>"
 
     mk = InlineKeyboardMarkup()
-    if page < pages_count - 1:
+    if page != j_count - 1:
         mk.add(InlineKeyboardButton(">>>", callback_data=f"journal_{acc.guid}_{page + 1}"))
-    if page > 0:
+    if page != 0:
         mk.add(InlineKeyboardButton("<<<", callback_data=f"journal_{acc.guid}_{page - 1}"))
     mk.add(InlineKeyboardButton("К счетам", callback_data=f"show_{acc.guid}"))
     bot.edit_message_text(
