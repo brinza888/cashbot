@@ -53,6 +53,33 @@ def open_book(readonly=True):
     return decorator
 
 
+def get_pure_assets(book: Book):
+    assets = 0
+    liab = 0
+    for acc in book.root_account.children:
+        if acc.type == "ASSET":
+            assets += acc.get_balance()
+        elif acc.type == "LIABILITY":
+            liab += acc.get_balance()
+    return assets - liab
+
+
+def get_income(book: Book):
+    income = 0
+    for acc in book.root_account.children:
+        if acc.type == "INCOME":
+            income += acc.get_balance()
+    return income
+
+
+def get_expense(book: Book):
+    expense = 0
+    for acc in book.root_account.children:
+        if acc.type == "EXPENSE":
+            expense += acc.get_balance()
+    return expense
+
+
 def add_children_markup(mk: InlineKeyboardMarkup, account: Account, callback_prefix: str = "show"):
     for acc in account.children:
         mk.add(InlineKeyboardButton(f"{acc.name:<20} {acc.get_balance():15,.2f} {acc.commodity.mnemonic}",
@@ -73,7 +100,15 @@ def add_children_markup(mk: InlineKeyboardMarkup, account: Account, callback_pre
 def command_accounts(message: Message, book):
     mk = InlineKeyboardMarkup()
     mk = add_children_markup(mk, book.root_account)
-    bot.send_message(message.chat.id, "Основные счета:", reply_markup=mk)
+    income, expense = get_income(book), get_expense(book)
+    profit = income - expense
+    text = (f"<pre>"
+            f"Чистые активы: {get_pure_assets(book):15,.2f}\n"
+            f"Доход:         {income:15,.2f}\n"
+            f"Расход:        {expense:15,.2f}\n"
+            f"Прибыль:       {profit:15,.2f}</pre>\n\n"
+            f"<u><b>Основные счета</b></u>")
+    bot.send_message(message.chat.id, text, reply_markup=mk, parse_mode="html")
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("show"))
@@ -83,10 +118,17 @@ def callback_show(call: CallbackQuery, book: Book):
     guid = call.data.split("_")[1]
     if guid == "root":
         acc = book.root_account
-        text = "<b>Основные счета</b>"
+        income, expense = get_income(book), get_expense(book)
+        profit = income - expense
+        text = (f"<pre>"
+                f"Чистые активы: {get_pure_assets(book):15,.2f}\n"
+                f"Доход:         {income:15,.2f}\n"
+                f"Расход:        {expense:15,.2f}\n"
+                f"Прибыль:       {profit:15,.2f}</pre>\n\n"
+                f"<u><b>Основные счета</b></u>")
     else:
         acc = book.accounts(guid=guid)
-        text = f"<b>{acc.name}</b>\n{acc.get_balance():,.2f}"
+        text = f"<b>{acc.name}</b>\n{acc.get_balance():,.2f} {acc.commodity.mnemonic}"
 
     mk = InlineKeyboardMarkup()
     if not acc.placeholder and acc.type != "ROOT":
