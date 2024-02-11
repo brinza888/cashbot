@@ -53,7 +53,7 @@ def open_book(readonly=True):
     return decorator
 
 
-def get_pure_assets(book: Book):
+def get_net_assets(book: Book):
     assets = 0
     liab = 0
     for acc in book.root_account.children:
@@ -80,6 +80,22 @@ def get_expense(book: Book):
     return expense
 
 
+def get_financial_results(book: Book):
+    income, expense = get_income(book), get_expense(book)
+    profit = income - expense
+    return income, expense, profit
+
+
+def get_root_text(book: Book):
+    income, expense, profit = get_financial_results(book)
+    return (f"<pre>"
+            f"Чистые активы: {get_net_assets(book) :15,.2f}\n"
+            f"Доход:         {income:15,.2f}\n"
+            f"Расход:        {expense:15,.2f}\n"
+            f"Прибыль:       {profit:15,.2f}</pre>\n\n"
+            f"<u><b>Основные счета</b></u>")
+
+
 def add_children_markup(mk: InlineKeyboardMarkup, account: Account, callback_prefix: str = "show"):
     for acc in account.children:
         mk.add(InlineKeyboardButton(f"{acc.name:<20} {acc.get_balance():15,.2f} {acc.commodity.mnemonic}",
@@ -100,15 +116,7 @@ def add_children_markup(mk: InlineKeyboardMarkup, account: Account, callback_pre
 def command_accounts(message: Message, book):
     mk = InlineKeyboardMarkup()
     mk = add_children_markup(mk, book.root_account)
-    income, expense = get_income(book), get_expense(book)
-    profit = income - expense
-    text = (f"<pre>"
-            f"Чистые активы: {get_pure_assets(book):15,.2f}\n"
-            f"Доход:         {income:15,.2f}\n"
-            f"Расход:        {expense:15,.2f}\n"
-            f"Прибыль:       {profit:15,.2f}</pre>\n\n"
-            f"<u><b>Основные счета</b></u>")
-    bot.send_message(message.chat.id, text, reply_markup=mk, parse_mode="html")
+    bot.send_message(message.chat.id, get_root_text(book), reply_markup=mk, parse_mode="html")
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("show"))
@@ -118,14 +126,7 @@ def callback_show(call: CallbackQuery, book: Book):
     guid = call.data.split("_")[1]
     if guid == "root":
         acc = book.root_account
-        income, expense = get_income(book), get_expense(book)
-        profit = income - expense
-        text = (f"<pre>"
-                f"Чистые активы: {get_pure_assets(book):15,.2f}\n"
-                f"Доход:         {income:15,.2f}\n"
-                f"Расход:        {expense:15,.2f}\n"
-                f"Прибыль:       {profit:15,.2f}</pre>\n\n"
-                f"<u><b>Основные счета</b></u>")
+        text = get_root_text(book)
     else:
         acc = book.accounts(guid=guid)
         text = f"<b>{acc.name}</b>\n{acc.get_balance():,.2f} {acc.commodity.mnemonic}"
