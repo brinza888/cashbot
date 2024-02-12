@@ -7,6 +7,8 @@ from telebot.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 import piecash
 from piecash import Book, Account, Transaction, Split
 
+from i18n import I18N
+
 
 load_dotenv()
 
@@ -18,17 +20,21 @@ class Config:
     DATABASE_URI = os.getenv("DATABASE_URI")
     READONLY = bool(int(os.getenv("READONLY", 1)))
 
+    LANG_CODE = os.getenv("LANG_CODE", "en")
+    LANG_FILE = os.getenv("LANG_FILE", "i18n.yaml")
+
     PER_PAGE = int(os.getenv("PER_PAGE", 3))
     
     def __init__(self):
         if not self.DATABASE_URI:
             raise ValueError("DATABASE_URI required")
         if not self.BOT_TOKEN:
-            raise ValueError("BOT_TOKEN requried")
+            raise ValueError("BOT_TOKEN required")
 
 
 config = Config()
 bot = TeleBot(config.BOT_TOKEN)
+i18n = I18N(lang_code=config.LANG_CODE, file=config.LANG_FILE)
 
 
 def protected(func):
@@ -89,11 +95,11 @@ def get_financial_results(book: Book):
 def get_root_text(book: Book):
     income, expense, profit = get_financial_results(book)
     return (f"<pre>"
-            f"Чистые активы: {get_net_assets(book) :15,.2f}\n"
-            f"Доход:         {income:15,.2f}\n"
-            f"Расход:        {expense:15,.2f}\n"
-            f"Прибыль:       {profit:15,.2f}</pre>\n\n"
-            f"<u><b>Основные счета</b></u>")
+            f"{i18n.t('net_assets'):>15}: {get_net_assets(book):>15,.2f}\n"
+            f"{i18n.t('income'):>15}: {income:>15,.2f}\n"
+            f"{i18n.t('expense'):>15}: {expense:>15,.2f}\n"
+            f"{i18n.t('profit'):>15}: {profit:>15,.2f}</pre>\n\n"
+            f"<u><b>{i18n.t('main')}</b></u>")
 
 
 def add_children_markup(mk: InlineKeyboardMarkup, account: Account, callback_prefix: str = "show"):
@@ -105,7 +111,7 @@ def add_children_markup(mk: InlineKeyboardMarkup, account: Account, callback_pre
             mk.add(InlineKeyboardButton("<<<", callback_data=f"{callback_prefix}_root"))
         else:
             mk.add(InlineKeyboardButton("<<<", callback_data=f"{callback_prefix}_{account.parent.guid}"))
-        mk.add(InlineKeyboardButton("^ Начало ^", callback_data=f"{callback_prefix}_root"))
+        mk.add(InlineKeyboardButton(f"{i18n.t('to_main')}", callback_data=f"{callback_prefix}_root"))
 
     return mk
 
@@ -134,8 +140,8 @@ def callback_show(call: CallbackQuery, book: Book):
     mk = InlineKeyboardMarkup()
     if not acc.placeholder and acc.type != "ROOT":
         mk.add(
-            InlineKeyboardButton("Журнал", callback_data=f"journal_{acc.guid}_0"),
-            InlineKeyboardButton("Проводка", callback_data=f"transfer_new_{acc.guid}")
+            InlineKeyboardButton(f"{i18n.t('journal')}", callback_data=f"journal_{acc.guid}_0"),
+            InlineKeyboardButton(f"{i18n.t('new_transaction')}", callback_data=f"transfer_new_{acc.guid}")
         )
     mk = add_children_markup(mk, acc)
     bot.edit_message_text(
@@ -174,7 +180,7 @@ def callback_journal(call: CallbackQuery, book: Book):
         mk.add(InlineKeyboardButton(">>>", callback_data=f"journal_{acc.guid}_{page + 1}"))
     if page != 0:
         mk.add(InlineKeyboardButton("<<<", callback_data=f"journal_{acc.guid}_{page - 1}"))
-    mk.add(InlineKeyboardButton("К счетам", callback_data=f"show_{acc.guid}"))
+    mk.add(InlineKeyboardButton(f"{i18n.t('to_accounts')}", callback_data=f"show_{acc.guid}"))
     bot.edit_message_text(
         chat_id=call.message.chat.id,
         message_id=call.message.id,
@@ -196,11 +202,11 @@ def callback_transfer(call: CallbackQuery, book: Book):
         temp_transfer_storage[(call.message.chat.id, call.message.id)] = guid[0]
         mk = InlineKeyboardMarkup()
         mk = add_children_markup(mk, book.root_account, "transfer_ch")
-        mk.add(InlineKeyboardButton("! Отмена !", callback_data="transfer_cancel"))
+        mk.add(InlineKeyboardButton(f"{i18n.t('cancel')}", callback_data="transfer_cancel"))
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.id,
-            text="Выберите второй счёт",
+            text=i18n.t('second_account'),
             reply_markup=mk
         )
     elif action == "ch":
@@ -211,14 +217,14 @@ def callback_transfer(call: CallbackQuery, book: Book):
 
         mk = InlineKeyboardMarkup()
         if not acc.placeholder and acc.type != "ROOT":
-            mk.add(InlineKeyboardButton(">> Выбрать <<", callback_data=f"transfer_ok_{acc.guid}"),)
+            mk.add(InlineKeyboardButton(f"{i18n.t('choose')}", callback_data=f"transfer_ok_{acc.guid}"),)
         mk = add_children_markup(mk, acc, "transfer_ch")
-        mk.add(InlineKeyboardButton("! Отмена !", callback_data="transfer_cancel"))
+        mk.add(InlineKeyboardButton(f"{i18n.t('cancel')}", callback_data="transfer_cancel"))
 
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.id,
-            text=f"Выберите второй счёт\n<b>{acc.name}</b>\n{acc.get_balance():,.2f}",
+            text=f"{i18n.t('second_account')}\n<b>{acc.name}</b>\n{acc.get_balance():,.2f}",
             reply_markup=mk,
             parse_mode="html"
         )
@@ -227,7 +233,7 @@ def callback_transfer(call: CallbackQuery, book: Book):
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.id,
-            text="Введите описание",
+            text=i18n.t("type_description"),
             reply_markup=InlineKeyboardMarkup()
         )
         bot.register_next_step_handler(call.message, step_description_transfer,
@@ -242,7 +248,7 @@ def callback_transfer(call: CallbackQuery, book: Book):
 @protected
 def step_description_transfer(message: Message, first, second):
     description = message.text
-    bot.send_message(message.chat.id, "Введите сумму")
+    bot.send_message(message.chat.id, i18n.t("type_amount"))
     bot.register_next_step_handler(message, step_amount_transfer,
                                    first=first, second=second, description=description)
 
@@ -260,7 +266,7 @@ def step_amount_transfer(message: Message, book: Book, first, second, descriptio
                      ])
     book.flush()
     book.save()
-    bot.send_message(message.chat.id, "Проводка успешно добавлена!")
+    bot.send_message(message.chat.id, i18n.t("transaction_added"))
     command_accounts(message)
 
 
